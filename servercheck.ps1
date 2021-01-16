@@ -1,5 +1,5 @@
 ﻿Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyNamePresentationFramework
+Add-Type -AssemblyName PresentationFramework
 [System.Windows.MessageBox]::Show('Please select text file where servers are saved')
 $FileBrowser = New-Object System.Windows.Forms.OpenFileDialog -Property @{ InitialDirectory = [Environment]::GetFolderPath('Desktop') }
 $null = $FileBrowser.ShowDialog()
@@ -17,8 +17,10 @@ $goodservers = @()
 
 foreach ($item in $serverlist){
 Write-Output "Checking $item..."
-get-hotfix -computer $item | sort installedon | select -last 2
-Get-CimInstance -ClassName win32_operatingsystem -ComputerName $item | select csname, lastbootuptime
+#get-hotfix -computer $item | sort installedon | select -last 1
+get-hotfix -computer $item | sort installedon | select -last 1 @{N="Last Updated Installed On  ";E={$_.InstalledOn}}
+#Get-CimInstance -ClassName win32_operatingsystem -ComputerName $item | select csname, lastbootuptime
+Get-CimInstance -ClassName win32_operatingsystem -ComputerName $item | Select-Object @{Name="Last Boot Time";Expression={$_.LastBootUpTime}}
 If (Get-PendingServerUpdates $item -ne $null){
     $pendingservers += $item
     Write-Warning "$item has pending updates"
