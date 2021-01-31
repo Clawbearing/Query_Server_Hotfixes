@@ -79,12 +79,8 @@ foreach ($item in $serverlist)
 {
 Write-Host "Checking patches for $($item)..."
    "-----------------------------------------------------------------------------------------------------------------------"
-#try
-#{Get-PendingServerUpdates $item}
-#catch
-#{'unable to check updates - check the domain the computer belongs to'}
 
-try{gwmi -ComputerName MUCMDP01 -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK' -ErrorAction Stop  | select -Property ArticleID -Last 1 -ErrorAction Stop}
+try{gwmi -ComputerName $item -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK' -ErrorAction Stop} 
 catch
 {Write-Host -BackgroundColor Black -ForegroundColor Yellow "Hol' up playa! check the domain this computer belongs to"
 $errorservers += $item
@@ -109,13 +105,13 @@ $NoBootValidation = @()
 #output as you go to show what servers are good - might try to commentthis out to clear out redundancy
 
 foreach ($goodserver in $goodservers){
-$tastingdate = Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver -ErrorAction Stop | Select-Object -Property LastBootupTime 
+$tastingdate = Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver | Select-Object -Property LastBootupTime 
 $LastBootTimeDate = $tastingdate.LastBootupTime.ToShortDateString()| Get-Date -Format 'yyyyMMdd'
 $PrettyBootTime = $tastingdate.LastBootupTime.ToShortDateString()
 $LastUpdate = get-hotfix -computer $goodserver | sort installedon | select -last 1
 $LastUpdateTime = $LastUpdate.InstalledOn.ToShortDateString() #| Get-Date -Format 'yyyyMMdd'
 
-try {Get-CimInstance -ClassName win32_operatingsystem -ComputerName APCMDP01 | Select-Object -Property LastBootupTime -ErrorAction Stop}
+try {Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver -ErrorAction Stop} #| Select-Object -Property LastBootupTime -ErrorAction Stop}
 catch{Write-Host -BackgroundColor Black -ForegroundColor Yellow 'Cannot verify last boot time but no pending patches - adding to unverified'
 $NoBootValidation += $goodserver}
 
