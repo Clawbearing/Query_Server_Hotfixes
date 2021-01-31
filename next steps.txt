@@ -1,2 +1,0 @@
--Catch Domain Controllers (currently dont output and show on the results so you have to manually parse the output to find them)
--Just grab the latest Hotfix installed - grabbing two looks like it takes more time

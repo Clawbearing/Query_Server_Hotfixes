@@ -1,4 +1,8 @@
-﻿
+﻿Function Get-PendingServerUpdates { Param ($Server)
+ gwmi -ComputerName $Server -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK'
+ }
+
+
 #region choose server text files
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName PresentationFramework
@@ -9,9 +13,6 @@ $null = $FileBrowser.ShowDialog()
 $actualfile = $FileBrowser.FileName
 #endregion 
 
-Function Get-PendingServerUpdates { Param ($Server)
- gwmi -ComputerName $Server -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK'
- }
 [System.Windows.MessageBox]::Show("Please select the Reboot Time from the Maintenance Schedule", "Select Reboot Time", 1, 0)
 
 
@@ -60,57 +61,36 @@ if ($result -eq [Windows.Forms.DialogResult]::OK) {
 $PatchDateminus1 = $PatchDate.AddDays(-1).ToShortDateString() | Get-Date -Format 'yyyyMMdd'
 #endregion 
 
+$unreachableservers = @()
+
 
 $serverlist = Get-Content -Path $actualfile
-$servers = Get-Content -Path $actualfile | Measure-Object -Line | Select-Object Lines
-$servercount = $servers.Lines
+$unreachableservers = $serverlist | where {$_ -match “[G][C][0-9][0-9]$”}
+$serverlist = $serverlist | where {$_ -notmatch “[G][C][0-9][0-9]$”}
 
-"Checking $servercount servers"
+
+Write-Host "Checking $($serverlist.Count + $unreachableservers.Count) servers"
 
 $pendingservers = @()
 $goodservers = @()
-$unreachableservers = @()
 
 foreach ($item in $serverlist)
 {
-    try
-{
-Write-Output "Checking $item..."
-get-hotfix -computer $item | sort installedon | select -last 1 -ErrorAction SilentlyContinue
-Get-CimInstance -ClassName win32_operatingsystem -ComputerName $item | Select-Object -Property PSComputerName, LastBootupTime -ErrorAction Stop
-" "
-"-----------------------------------------------------------------------------"
-}
-    catch
-{
-    $x = $Error[0].Exception.Message.ToString()
-    Write-Warning "$x to $item"
-    Write-Warning "Please check domain/privleges for $($item)"
-     $unreachableservers += $item
-}
+Write-Host "Checking patches for $($item)..."
 
 If (Get-PendingServerUpdates $item -ne $null -And $item -notin $unreachableservers){
     $pendingservers += $item
-    #Write-Warning "$item has pending updates"
-    #Write-Host " "
-    #Write-Host " "
-    #Write-Host "------------------------------------------------------------"
-
     }
     Elseif ($item -notin $unreachableservers) {
     $goodservers += $item
-    #Write-Output "No pending updates for $item"
-    #Write-Host " "
-    #Write-Host " "
-    #Write-Host "------------------------------------------------------------"
     }
- 
-
 }
 
 #region pick validated servers
 $validatedservers = @()
 $NotValidatedServers = @()
+
+#output as you go to show what servers are good - might try to commentthis out to clear out redundancy
 
 foreach ($goodserver in $goodservers){
 $tastingdate = Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver | Select-Object -Property LastBootupTime 
@@ -120,12 +100,14 @@ $LastUpdate = get-hotfix -computer $goodserver | sort installedon | select -last
 $LastUpdateTime = $LastUpdate.InstalledOn.ToShortDateString() #| Get-Date -Format 'yyyyMMdd'
 
    if ($LastBootTimeDate -ge $PatchDateminus1) {
-   "$($goodserver) sucessfully rebooted within patch window on $($PrettyBootTime).  Last update installed $($LastUpdateTime)"
+   Write-Host "Checking $goodserver boot time and patches..."
+   #"$($goodserver) sucessfully validated. Rebooted within patch window on $($PrettyBootTime).  Last update installed $($LastUpdateTime) with no pending updates."
    $validatedservers += $goodserver
    }
    else
    { 
-   Write-Warning "Please check $($goodserver) - last rebooted $($PrettyBootTime) and last update installed $($LastUpdateTime)"
+   Write-Host "UNABLE TO VALIDATE $goodserver..."
+   #"Please check $($goodserver) - last rebooted $($PrettyBootTime) and last update installed $($LastUpdateTime)"
    $NotValidatedServers += $goodserver
    
    }
@@ -133,36 +115,34 @@ $LastUpdateTime = $LastUpdate.InstalledOn.ToShortDateString() #| Get-Date -Forma
 }
 
 
-#endregion
 
 $NotValidatedServers += $pendingservers
 
+
 " "
-"$servercount servers selected"
-"$($unreachableservers.Count + $NotValidatedServers.Count + $validatedservers.Count) servers checked"
+Write-Host "$($serverlist.Count + $unreachableservers.Count) servers intially selected at the start"
+Write-Host "$($unreachableservers.Count + $NotValidatedServers.Count + $validatedservers.Count) servers checked"
 " "
-Write-Warning "Unable to validate the following $($NotValidatedServers.Count) servers:".ToUpper()
+Write-Host -ForegroundColor Yellow "Unable to validate the following $($NotValidatedServers.Count) servers:".ToUpper()
 $($NotValidatedServers)
 " "
 "More info below for each server:"
 "--------------------------------------------------"
 " "
 foreach ($nonvalidation in $NotValidatedServers){
-   "Please check $($nonvalidation):"
-   "Last rebooted $($PrettyBootTime) and last update installed $($LastUpdateTime)"
+   "Please check $($nonvalidation): Last rebooted $($PrettyBootTime)"
    "Pending Server Updates: " + (Get-PendingServerUpdates -Server $nonvalidation).Count
-   "--------------------------------------------------"
+   "-----------------------------------------------------------------------------------------------------------------------"
+   }
 
+Write-Host -ForegroundColor Green "The following servers have validated successfully:".ToUpper()
+" "
+foreach ($valid in $validatedservers){
+"$($valid) Last rebooted: $($PrettyBootTime) - Last update installed: $($LastUpdateTime) and no pending updates"
+   "-----------------------------------------------------------------------------------------------------------------------"
 }
-
 " "
-"Sucessfully validated the following $($validatedservers.Count) servers:".ToUpper()
-$($validatedservers)
+Write-Host -BackgroundColor Black -ForegroundColor Yellow "The following $($unreachableservers.count) servers could not be reached:".ToUpper()
 " "
-"--------------------------------------------------"
+$unreachableservers 
 " "
-"The following $($unreachableservers.count) servers could not be reached:".ToUpper()
-$unreachableservers
-" "
-"--------------------------------------------------"
-
