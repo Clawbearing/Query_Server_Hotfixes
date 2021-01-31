@@ -73,43 +73,66 @@ Write-Host "Checking $($serverlist.Count + $unreachableservers.Count) servers"
 
 $pendingservers = @()
 $goodservers = @()
+$errorservers = @()
 
 foreach ($item in $serverlist)
 {
 Write-Host "Checking patches for $($item)..."
+   "-----------------------------------------------------------------------------------------------------------------------"
+#try
+#{Get-PendingServerUpdates $item}
+#catch
+#{'unable to check updates - check the domain the computer belongs to'}
 
-If (Get-PendingServerUpdates $item -ne $null -And $item -notin $unreachableservers){
-    $pendingservers += $item
-    }
+try{gwmi -ComputerName MUCMDP01 -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK' -ErrorAction Stop  | select -Property ArticleID -Last 1 -ErrorAction Stop}
+catch
+{Write-Host -BackgroundColor Black -ForegroundColor Yellow "Hol' up playa! check the domain this computer belongs to"
+$errorservers += $item
+$unreachableservers += $item}
+
+    If (Get-PendingServerUpdates $item -ne $null -And $item -notin $unreachableservers){
+        $pendingservers += $item
+        Write-Host -BackgroundColor Black -ForegroundColor Yellow "$($item) has pending updates..."
+        " "
+        }
     Elseif ($item -notin $unreachableservers) {
-    $goodservers += $item
-    }
+        $goodservers += $item
+        Write-Host "$($item) has no pending  updates..."
+        " "
+        }
 }
 
 #region pick validated servers
 $validatedservers = @()
 $NotValidatedServers = @()
-
+$NoBootValidation = @()
 #output as you go to show what servers are good - might try to commentthis out to clear out redundancy
 
 foreach ($goodserver in $goodservers){
-$tastingdate = Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver | Select-Object -Property LastBootupTime 
+$tastingdate = Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver -ErrorAction Stop | Select-Object -Property LastBootupTime 
 $LastBootTimeDate = $tastingdate.LastBootupTime.ToShortDateString()| Get-Date -Format 'yyyyMMdd'
 $PrettyBootTime = $tastingdate.LastBootupTime.ToShortDateString()
 $LastUpdate = get-hotfix -computer $goodserver | sort installedon | select -last 1
 $LastUpdateTime = $LastUpdate.InstalledOn.ToShortDateString() #| Get-Date -Format 'yyyyMMdd'
 
-   if ($LastBootTimeDate -ge $PatchDateminus1) {
+try {Get-CimInstance -ClassName win32_operatingsystem -ComputerName APCMDP01 | Select-Object -Property LastBootupTime -ErrorAction Stop}
+catch{Write-Host -BackgroundColor Black -ForegroundColor Yellow 'Cannot verify last boot time but no pending patches - adding to unverified'
+$NoBootValidation += $goodserver}
+
+   if ($LastBootTimeDate -ge $PatchDateminus1 -and $goodserver -notin $NoBootValidation) {
+   "-----------------------------------------------------------------------------------------------------------------------"
    Write-Host "Checking $goodserver boot time and patches..."
-   #"$($goodserver) sucessfully validated. Rebooted within patch window on $($PrettyBootTime).  Last update installed $($LastUpdateTime) with no pending updates."
    $validatedservers += $goodserver
+   "$($goodserver) has rebooted within patch window..."
+   " "
    }
    else
    { 
+    "-----------------------------------------------------------------------------------------------------------------------"
    Write-Host "UNABLE TO VALIDATE $goodserver..."
    #"Please check $($goodserver) - last rebooted $($PrettyBootTime) and last update installed $($LastUpdateTime)"
    $NotValidatedServers += $goodserver
-   
+   " "
    }
 
 }
@@ -120,7 +143,7 @@ $NotValidatedServers += $pendingservers
 
 
 " "
-Write-Host "$($serverlist.Count + $unreachableservers.Count) servers intially selected at the start"
+Write-Host "$($serverlist.Count + $unreachableservers.Count - $errorservers.count) servers intially selected at the start"
 Write-Host "$($unreachableservers.Count + $NotValidatedServers.Count + $validatedservers.Count) servers checked"
 " "
 Write-Host -ForegroundColor Yellow "Unable to validate the following $($NotValidatedServers.Count) servers:".ToUpper()
@@ -130,12 +153,12 @@ $($NotValidatedServers)
 "--------------------------------------------------"
 " "
 foreach ($nonvalidation in $NotValidatedServers){
-   "Please check $($nonvalidation): Last rebooted $($PrettyBootTime)"
-   "Pending Server Updates: " + (Get-PendingServerUpdates -Server $nonvalidation).Count
+   "Please confirm $($nonvalidation) last boot time"
+   "Pending Server Updates (May bug out and be blank): " + (Get-PendingServerUpdates -Server $nonvalidation).Count
    "-----------------------------------------------------------------------------------------------------------------------"
    }
 
-Write-Host -ForegroundColor Green "The following servers have validated successfully:".ToUpper()
+Write-Host -ForegroundColor Green "The following $($validatedservers.Count) servers have validated successfully:".ToUpper()
 " "
 foreach ($valid in $validatedservers){
 "$($valid) Last rebooted: $($PrettyBootTime) - Last update installed: $($LastUpdateTime) and no pending updates"
@@ -146,3 +169,5 @@ Write-Host -BackgroundColor Black -ForegroundColor Yellow "The following $($unre
 " "
 $unreachableservers 
 " "
+
+
