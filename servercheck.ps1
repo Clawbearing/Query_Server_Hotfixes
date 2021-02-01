@@ -2,6 +2,8 @@
  gwmi -ComputerName $Server -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK'
  }
 
+Out-File .\unreachable.txt
+Out-File .\pendingupdates.txt
 
 #region choose server text files
 Add-Type -AssemblyName System.Windows.Forms
@@ -68,6 +70,8 @@ $serverlist = Get-Content -Path $actualfile
 $unreachableservers = $serverlist | where {$_ -match “[G][C][0-9][0-9]$”}
 $serverlist = $serverlist | where {$_ -notmatch “[G][C][0-9][0-9]$”}
 
+$unreachableservers | Add-Content .\unreachable.txt
+
 
 Write-Host "Checking $($serverlist.Count + $unreachableservers.Count) servers"
 
@@ -80,15 +84,17 @@ foreach ($item in $serverlist)
 Write-Host "Checking patches for $($item)..."
    "-----------------------------------------------------------------------------------------------------------------------"
 
-try{gwmi -ComputerName $item -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK' -ErrorAction Stop} 
+try{gwmi -ComputerName $item -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK' -ErrorAction Stop | select -Property ArticleID, PSComputerName  -Last 1 -ErrorAction Stop} 
 catch
 {Write-Host -BackgroundColor Black -ForegroundColor Yellow "Hol' up playa! check the domain this computer belongs to"
 $errorservers += $item
-$unreachableservers += $item}
+$unreachableservers += $item
+$item | Add-Content .\unreachable.txt}
 
     If (Get-PendingServerUpdates $item -ne $null -And $item -notin $unreachableservers){
         $pendingservers += $item
         Write-Host -BackgroundColor Black -ForegroundColor Yellow "$($item) has pending updates..."
+        $item | Add-Content .\pendingupdates.txt
         " "
         }
     Elseif ($item -notin $unreachableservers) {
@@ -112,7 +118,7 @@ $LastUpdate = get-hotfix -computer $goodserver | sort installedon | select -last
 $LastUpdateTime = $LastUpdate.InstalledOn.ToShortDateString() #| Get-Date -Format 'yyyyMMdd'
 
 try {Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver -ErrorAction Stop} #| Select-Object -Property LastBootupTime -ErrorAction Stop}
-catch{Write-Host -BackgroundColor Black -ForegroundColor Yellow 'Cannot verify last boot time but no pending patches - adding to unverified'
+catch{Write-Host -BackgroundColor Black -ForegroundColor Yellow "Cannot verify last boot time for $($goodserver) but no pending patches - adding to unverified"
 $NoBootValidation += $goodserver}
 
    if ($LastBootTimeDate -ge $PatchDateminus1 -and $goodserver -notin $NoBootValidation) {
@@ -126,7 +132,7 @@ $NoBootValidation += $goodserver}
    { 
     "-----------------------------------------------------------------------------------------------------------------------"
    Write-Host "UNABLE TO VALIDATE $goodserver..."
-   #"Please check $($goodserver) - last rebooted $($PrettyBootTime) and last update installed $($LastUpdateTime)"
+   "Please check $($goodserver) - last rebooted $($PrettyBootTime) and last update installed $($LastUpdateTime)"
    $NotValidatedServers += $goodserver
    " "
    }
