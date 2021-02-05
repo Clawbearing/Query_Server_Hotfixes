@@ -86,7 +86,7 @@ Write-Host "Checking patches for $($item)..."
 
 try{gwmi -ComputerName $item -query 'SELECT * FROM CCM_SoftwareUpdate' -Namespace 'ROOT\ccm\clientSDK' -ErrorAction Stop | select -Property ArticleID, PSComputerName  -Last 1 -ErrorAction Stop} 
 catch
-{Write-Host -BackgroundColor Black -ForegroundColor Yellow "Hol' up playa! check the domain this computer belongs to"
+{Write-Host -BackgroundColor Black -ForegroundColor Yellow "Unable to grab pending updates for server - adding to unreachable"
 $errorservers += $item
 $unreachableservers += $item
 $item | Add-Content .\unreachable.txt}
@@ -110,6 +110,7 @@ $NotValidatedServers = @()
 $NoBootValidation = @()
 #output as you go to show what servers are good - might try to commentthis out to clear out redundancy
 
+
 foreach ($goodserver in $goodservers){
 $tastingdate = Get-CimInstance -ClassName win32_operatingsystem -ComputerName $goodserver | Select-Object -Property LastBootupTime 
 $LastBootTimeDate = $tastingdate.LastBootupTime.ToShortDateString()| Get-Date -Format 'yyyyMMdd'
@@ -125,7 +126,7 @@ $NoBootValidation += $goodserver}
    "-----------------------------------------------------------------------------------------------------------------------"
    Write-Host "Checking $goodserver boot time and patches..."
    $validatedservers += $goodserver
-   "$($goodserver) has rebooted within patch window..."
+   #"$($goodserver) has rebooted within patch window..."
    " "
    }
    else
